@@ -70,6 +70,9 @@ typedef struct
 
     void (*pf_set_meta)(void*, vlc_meta_t *p_meta);
 
+    void (*pf_set_input_item)(void *, input_item_t *);
+    bool (*pf_select_subtitle)(void *, int source_id);
+
 } chromecast_common;
 
 # ifdef __cplusplus
@@ -77,4 +80,3 @@ typedef struct
 # endif
 
 #endif // VLC_CHROMECAST_COMMON_H
-

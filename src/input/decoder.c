@@ -846,13 +846,17 @@ static int DecoderPlaySout( decoder_t *p_dec, block_t *p_sout_block )
     }
 
     DecoderWaitUnblock( p_dec );
+    vlc_tick_t source_pts = p_sout_block->i_pts > VLC_TICK_INVALID
+                           ? p_sout_block->i_pts : p_sout_block->i_dts;
+    if (source_pts > VLC_TICK_INVALID)
+        source_pts += p_owner->i_ts_delay;
     DecoderFixTs( p_dec, &p_sout_block->i_dts, &p_sout_block->i_pts,
                   &p_sout_block->i_length, NULL, INT64_MAX );
 
     vlc_mutex_unlock( &p_owner->lock );
 
     /* FIXME --VLC_TICK_INVALID inspect stream_output*/
-    return sout_InputSendBuffer( p_owner->p_sout_input, p_sout_block );
+    return sout_InputSendBuffer( p_owner->p_sout_input, p_sout_block, source_pts );
 }
 
 /* This function process a block for sout

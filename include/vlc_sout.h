@@ -192,6 +192,10 @@ static inline int sout_MuxControl( sout_mux_t *p_mux, int i_query, ... )
 
 enum sout_stream_query_e {
     SOUT_STREAM_EMPTY,    /* arg1=bool *,       res=can fail (assume true) */
+    /* Optional source/clocked timestamp pair for the block about to be sent
+     * (PTS when available, DTS otherwise; includes configured ES delay).
+     * arg1=sout_stream_id_sys_t *, arg2=vlc_tick_t, arg3=vlc_tick_t. */
+    SOUT_STREAM_SOURCE_TIMESTAMPS,
 };
 
 struct sout_stream_t

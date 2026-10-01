@@ -44,6 +44,7 @@
 #endif
 #include "cast_channel.pb.h"
 #include "chromecast_common.h"
+#include "chromecast_subtitles.h"
 
 #define PACKET_HEADER_LEN 4
 
@@ -120,7 +121,9 @@ public:
     unsigned msgReceiverClose(const std::string& destinationId);
     unsigned msgAuth();
     unsigned msgPlayerLoad( const std::string& destinationId,
-                            const std::string& mime, const vlc_meta_t *p_meta );
+                            const std::string& mime, const vlc_meta_t *p_meta,
+                            const std::vector<ChromecastSubtitleTrack> &, unsigned activeTrack );
+    unsigned msgPlayerSetTracks( const std::string &, int64_t mediaSessionId, unsigned activeTrack );
     unsigned msgPlayerPlay( const std::string& destinationId, int64_t mediaSessionId );
     unsigned msgPlayerStop( const std::string& destinationId, int64_t mediaSessionId );
     unsigned msgPlayerPause( const std::string& destinationId, int64_t mediaSessionId );
@@ -172,7 +175,9 @@ struct intf_sys_t
     ~intf_sys_t();
 
     void setRetryOnFail(bool);
-    void setHasInput(const std::string mime_type = "");
+    void setHasInput(const std::string mime_type = "", vlc_tick_t caption_origin = 0,
+                     bool have_caption_clock = false);
+    void setSubtitle(const es_format_t *);
 
     void setOnInputEventCb(on_input_event_itf on_input_event, void *on_input_event_data);
     void setDemuxEnabled(bool enabled, on_paused_changed_itf on_paused_changed,
@@ -238,6 +243,9 @@ private:
     static void set_pause_state(void*, bool paused);
 
     static void set_meta(void*, vlc_meta_t *p_meta);
+    static void set_input_item(void *, input_item_t *);
+    static bool select_subtitle(void *, int);
+    bool updateSubtitleSelection();
 
     void prepareHttpArtwork();
 
@@ -280,6 +288,8 @@ private:
     bool m_interrupted;
 
     vlc_meta_t *m_meta;
+    std::unique_ptr<ChromecastSubtitles> m_subtitles;
+    std::vector<ChromecastSubtitleTrack> m_subtitle_tracks;
 
     vlc_interrupt_t *m_ctl_thread_interrupt;
 
