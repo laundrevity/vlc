@@ -227,12 +227,17 @@ void sout_InputFlush( sout_packetizer_input_t *p_input )
  *
  *****************************************************************************/
 int sout_InputSendBuffer( sout_packetizer_input_t *p_input,
-                          block_t *p_buffer )
+                          block_t *p_buffer, vlc_tick_t source_pts )
 {
     sout_instance_t     *p_sout = p_input->p_sout;
     int                 i_ret;
 
     vlc_mutex_lock( &p_sout->lock );
+    const vlc_tick_t clocked = p_buffer->i_pts > VLC_TICK_INVALID
+                               ? p_buffer->i_pts : p_buffer->i_dts;
+    if (source_pts > VLC_TICK_INVALID && clocked > VLC_TICK_INVALID)
+        sout_StreamControl(p_sout->p_stream, SOUT_STREAM_SOURCE_TIMESTAMPS,
+                           p_input->id, source_pts, clocked);
     i_ret = p_sout->p_stream->pf_send( p_sout->p_stream,
                                        p_input->id, p_buffer );
     vlc_mutex_unlock( &p_sout->lock );
