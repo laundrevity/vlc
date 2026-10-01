@@ -53,6 +53,9 @@ struct demux_cc
     {
         resetDemuxEof();
 
+        p_renderer->pf_set_input_item(p_renderer->p_opaque,
+            p_demux->p_next->p_input ? input_GetItem(p_demux->p_next->p_input) : NULL);
+
         vlc_meta_t *p_meta = vlc_meta_New();
         if( likely(p_meta != NULL) )
         {
@@ -380,6 +383,15 @@ struct demux_cc
             break;
         }
         case DEMUX_SET_ES:
+        {
+            va_list copy;
+            va_copy(copy, args);
+            int selected = va_arg(copy, int);
+            va_end(copy);
+            // Native tracks are already fully available to the receiver.
+            // Selecting one must not flush A/V or resume paused playback.
+            if (p_renderer->pf_select_subtitle(p_renderer->p_opaque, selected))
+                break;
             /* Seek back to the last known pos when changing tracks. This will
              * flush sout streams, make sout del/add called right away and
              * clear CC buffers. */
@@ -387,6 +399,7 @@ struct demux_cc
             resetTimes();
             resetDemuxEof();
             break;
+        }
         case DEMUX_FILTER_ENABLE:
             p_renderer = static_cast<chromecast_common *>(
                         var_InheritAddress( p_demux, CC_SHARED_VAR_NAME ) );

@@ -147,6 +147,7 @@ struct sout_stream_sys_t
     std::vector<sout_stream_id_sys_t*> streams;
     std::vector<sout_stream_id_sys_t*> out_streams;
     unsigned int                       out_streams_added;
+    bool                               has_source_clock = false;
 
 private:
     std::string GetVencOption( sout_stream_t *, vlc_fourcc_t *,
@@ -161,6 +162,8 @@ struct sout_stream_id_sys_t
     es_format_t           fmt;
     sout_stream_id_sys_t  *p_sub_id;
     bool                  flushed;
+    vlc_tick_t            source_clock_offset;
+    bool                  has_source_timestamp;
 };
 
 #define SOUT_CFG_PREFIX "sout-chromecast-"
@@ -322,12 +325,17 @@ static int ProxySend(sout_stream_t *p_stream, sout_stream_id_sys_t *id,
             }
         }
 
+        // Input packets have been restored to source time before transcoding.
+        // The muxer rebases this first DTS to zero, including skipped keyframes.
+        const vlc_tick_t first_dts = p_buffer->i_dts > VLC_TICK_INVALID
+                                    ? p_buffer->i_dts : p_buffer->i_pts;
+        const vlc_tick_t caption_origin = first_dts - VLC_TICK_0;
         int ret = sout_StreamIdSend(p_stream->p_next, id, p_buffer);
         if (ret == VLC_SUCCESS && !p_sys->cc_has_input)
         {
             /* Start the chromecast only when all streams are added into the
              * last sout (the http one) */
-            p_sys->p_intf->setHasInput(p_sys->mime);
+            p_sys->p_intf->setHasInput(p_sys->mime, caption_origin, p_sys->has_source_clock);
             p_sys->cc_has_input = true;
         }
         return ret;
@@ -705,9 +713,13 @@ static sout_stream_id_sys_t *Add(sout_stream_t *p_stream, const es_format_t *p_f
         es_format_Copy( &p_sys_id->fmt, p_fmt );
         p_sys_id->p_sub_id = NULL;
         p_sys_id->flushed = false;
+        p_sys_id->source_clock_offset = 0;
+        p_sys_id->has_source_timestamp = false;
 
         p_sys->streams.push_back( p_sys_id );
         p_sys->es_changed = true;
+        if (p_fmt->i_cat == SPU_ES)
+            p_sys->p_intf->setSubtitle(p_fmt);
     }
     return p_sys_id;
 }
@@ -724,6 +736,8 @@ static void DelInternal(sout_stream_t *p_stream, sout_stream_id_sys_t *id,
         sout_stream_id_sys_t *p_sys_id = *it;
         if ( p_sys_id == id )
         {
+            if (p_sys_id->fmt.i_cat == SPU_ES)
+                p_sys->p_intf->setSubtitle(NULL);
             if ( p_sys_id->p_sub_id != NULL )
             {
                 sout_StreamIdDel( p_sys->p_out, p_sys_id->p_sub_id );
@@ -1326,6 +1340,28 @@ static int Send(sout_stream_t *p_stream, sout_stream_id_sys_t *id,
     sout_stream_sys_t *p_sys = p_stream->p_sys;
     vlc_mutex_locker locker(&p_sys->lock);
 
+    if (id->fmt.i_cat == SPU_ES)
+    {
+        // Captions are served as a complete native WebVTT resource. They must
+        // never enter the A/V muxer or be treated as a failed video stream.
+        p_sys->p_intf->setSubtitle(&id->fmt);
+        block_Release(p_buffer);
+        return VLC_SUCCESS;
+    }
+
+    if (id->has_source_timestamp)
+    {
+        // The receiver owns playback pacing. Sender pauses must not create
+        // gaps in its media timestamps or move captions relative to the video.
+        if (p_buffer->i_pts > VLC_TICK_INVALID)
+            p_buffer->i_pts += id->source_clock_offset;
+        if (p_buffer->i_dts > VLC_TICK_INVALID)
+            p_buffer->i_dts += id->source_clock_offset;
+        id->has_source_timestamp = false;
+        if (id->fmt.i_cat == VIDEO_ES)
+            p_sys->has_source_clock = true;
+    }
+
     if( p_sys->isFlushing( p_stream ) || p_sys->cc_eof )
     {
         block_Release( p_buffer );
@@ -1403,6 +1439,23 @@ static void on_input_event_cb(void *data, enum cc_input_event event, union cc_in
             }
             break;
     }
+}
+
+static int Control(sout_stream_t *stream, int query, va_list args)
+{
+    if (query != SOUT_STREAM_SOURCE_TIMESTAMPS)
+        return VLC_EGENERIC;
+    sout_stream_id_sys_t *id = va_arg(args, sout_stream_id_sys_t *);
+    const vlc_tick_t source = va_arg(args, vlc_tick_t);
+    const vlc_tick_t clocked = va_arg(args, vlc_tick_t);
+    sout_stream_sys_t *sys = stream->p_sys;
+    vlc_mutex_locker locker(&sys->lock);
+    if (id->fmt.i_cat == VIDEO_ES || id->fmt.i_cat == AUDIO_ES)
+    {
+        id->source_clock_offset = source - clocked;
+        id->has_source_timestamp = true;
+    }
+    return VLC_SUCCESS;
 }
 
 /*****************************************************************************
@@ -1495,6 +1548,7 @@ static int Open(vlc_object_t *p_this)
     p_stream->pf_del     = Del;
     p_stream->pf_send    = Send;
     p_stream->pf_flush   = Flush;
+    p_stream->pf_control = Control;
 
     p_stream->p_sys = p_sys;
 
@@ -1531,4 +1585,3 @@ static void Close(vlc_object_t *p_this)
     /* Delete last since p_intf and p_sys depends on httpd_host */
     httpd_HostDelete(httpd_host);
 }
-

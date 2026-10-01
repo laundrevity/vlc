@@ -357,17 +357,51 @@ std::string ChromecastCommunication::GetMedia( const std::string& mime,
 }
 
 unsigned ChromecastCommunication::msgPlayerLoad( const std::string& destinationId,
-                                             const std::string& mime, const vlc_meta_t *p_meta )
+                                             const std::string& mime, const vlc_meta_t *p_meta,
+                                             const std::vector<ChromecastSubtitleTrack> &tracks,
+                                             unsigned activeTrack )
 {
     unsigned id = getNextRequestId();
     std::stringstream ss;
     ss << "{\"type\":\"LOAD\","
-       <<  "\"media\":{" << GetMedia( mime, p_meta ) << "},"
+       <<  "\"media\":{" << GetMedia( mime, p_meta );
+    if (!tracks.empty())
+    {
+        ss << ",\"tracks\":[";
+        bool first = true;
+        for (const auto &track : tracks)
+        {
+            if (!first) ss << ',';
+            first = false;
+            ss << "{\"trackId\":" << track.id
+               << ",\"type\":\"TEXT\",\"subtype\":\"SUBTITLES\",\"trackContentType\":\"text/vtt\""
+               << ",\"trackContentId\":\"" << escape_json(track.url)
+               << "\",\"language\":\"" << escape_json(track.language)
+               << "\",\"name\":\"" << escape_json(track.name) << "\"}";
+        }
+        ss << ']';
+    }
+    ss << "},\"activeTrackIds\":[";
+    for (const auto &track : tracks)
+        if (track.id == activeTrack) ss << activeTrack;
+    ss << "],"
        <<  "\"autoplay\":\"false\","
        <<  "\"requestId\":" << id
        << "}";
 
     return pushMediaPlayerMessage( destinationId, ss ) == VLC_SUCCESS ? id : kInvalidId;
+}
+
+unsigned ChromecastCommunication::msgPlayerSetTracks(const std::string &destinationId,
+                                                     int64_t mediaSessionId, unsigned activeTrack)
+{
+    unsigned id = getNextRequestId();
+    std::stringstream ss;
+    ss << "{\"type\":\"EDIT_TRACKS_INFO\",\"mediaSessionId\":" << mediaSessionId
+       << ",\"activeTrackIds\":[";
+    if (activeTrack) ss << activeTrack;
+    ss << "],\"requestId\":" << id << '}';
+    return pushMediaPlayerMessage(destinationId, ss) == VLC_SUCCESS ? id : kInvalidId;
 }
 
 unsigned ChromecastCommunication::msgPlayerPlay( const std::string& destinationId, int64_t mediaSessionId )

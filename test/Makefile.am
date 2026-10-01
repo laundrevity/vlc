@@ -39,6 +39,10 @@ check_PROGRAMS = \
 
 if ENABLE_SOUT
 check_PROGRAMS += test_modules_tls
+check_PROGRAMS += test_modules_chromecast_webvtt
+if BUILD_CHROMECAST
+check_PROGRAMS += test_modules_chromecast_subtitles
+endif
 endif
 if UPDATE_CHECK
 check_PROGRAMS += test_src_crypto_update
@@ -58,6 +62,9 @@ EXTRA_PROGRAMS = \
 
 #check_DATA = samples/test.sample samples/meta.sample
 EXTRA_DIST = \
+	samples/chromecast.srt \
+	modules/stream_out/chromecast_receiver.py \
+	modules/stream_out/chromecast_timing.py \
 	samples/certs/certkey.pem \
 	samples/empty.voc \
 	samples/image.jpg \
@@ -136,6 +143,12 @@ test_modules_keystore_SOURCES = modules/keystore/test.c
 test_modules_keystore_LDADD = $(LIBVLCCORE) $(LIBVLC)
 test_modules_tls_SOURCES = modules/misc/tls.c
 test_modules_tls_LDADD = $(LIBVLCCORE) $(LIBVLC)
+test_modules_chromecast_webvtt_SOURCES = modules/stream_out/chromecast_webvtt.cpp
+test_modules_chromecast_subtitles_SOURCES = modules/stream_out/chromecast_subtitles.cpp \
+    ../modules/stream_out/chromecast/chromecast_subtitles.cpp
+test_modules_chromecast_subtitles_CPPFLAGS = $(AM_CPPFLAGS) -DSRCDIR=\"$(srcdir)\" \
+    -DMODULE_STRING=\"chromecast_subtitles_test\"
+test_modules_chromecast_subtitles_LDADD = $(LIBVLCCORE) $(LIBVLC) $(SOCKET_LIBS)
 test_modules_demux_libmp4_LDADD = $(LIBVLCCORE) $(LIBVLC) $(LIBM)
 if HAVE_ZLIB
 test_modules_demux_libmp4_LDADD += -lz

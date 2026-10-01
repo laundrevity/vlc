@@ -87,6 +87,10 @@ libstream_out_chromecast_plugin_la_SOURCES = stream_out/chromecast/cast.cpp stre
 nodist_libstream_out_chromecast_plugin_la_SOURCES = stream_out/chromecast/@PROTOBUF_VERSION@/cast_channel.pb.cc
 libstream_out_chromecast_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -Istream_out/chromecast/@PROTOBUF_VERSION@ $(CHROMECAST_CFLAGS)
 libstream_out_chromecast_plugin_la_LIBADD = $(CHROMECAST_LIBS) $(SOCKET_LIBS)
+libstream_out_chromecast_plugin_la_SOURCES += \
+    stream_out/chromecast/chromecast_subtitles.cpp \
+    stream_out/chromecast/chromecast_subtitles.h \
+    stream_out/chromecast/chromecast_webvtt.hpp
 CLEANFILES += $(nodist_libstream_out_chromecast_plugin_la_SOURCES)
 
 if ENABLE_SOUT

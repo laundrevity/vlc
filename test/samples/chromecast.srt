@@ -1,0 +1,20 @@
+1
+00:00:01,000 --> 00:00:03,000
+First line: café & tea.
+
+2
+00:00:03,000 --> 00:00:08,000
+Across a seek.
+Second line.
+
+3
+00:00:10,000 --> 00:00:12,000
+Later line.
+
+4
+00:02:05,000 --> 00:02:08,000
+First caption after the long seek.
+
+5
+00:02:15,000 --> 00:02:18,000
+Second caption after the long seek.

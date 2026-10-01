@@ -134,6 +134,7 @@ intf_sys_t::intf_sys_t(vlc_object_t * const p_this, int port, std::string device
     std::stringstream ss;
     ss << "http://" << m_communication->getServerIp() << ":" << port;
     m_art_http_ip = ss.str();
+    m_subtitles.reset(new ChromecastSubtitles(p_this, httpd_host, getHttpStreamPath()));
 
     char *device_name = var_GetString(p_this, "sout-chromecast-device-name");
     if (device_name)
@@ -149,6 +150,8 @@ intf_sys_t::intf_sys_t(vlc_object_t * const p_this, int port, std::string device
     m_common.pf_send_input_event = send_input_event;
     m_common.pf_set_pause_state  = set_pause_state;
     m_common.pf_set_meta         = set_meta;
+    m_common.pf_set_input_item   = set_input_item;
+    m_common.pf_select_subtitle  = select_subtitle;
 
     assert( var_Type( m_module->obj.parent->obj.parent, CC_SHARED_VAR_NAME) == 0 );
     if (var_Create( m_module->obj.parent->obj.parent, CC_SHARED_VAR_NAME, VLC_VAR_ADDRESS ) == VLC_SUCCESS )
@@ -382,7 +385,8 @@ void intf_sys_t::tryLoad()
     // Reset the mediaSessionID to allow the new session to become the current one.
     // we cannot start a new load when the last one is still processing
     m_last_request_id =
-        m_communication->msgPlayerLoad( m_appTransportId, m_mime, m_meta );
+        m_communication->msgPlayerLoad( m_appTransportId, m_mime, m_meta,
+                                       m_subtitle_tracks, m_subtitles->ActiveTrack() );
     if( m_last_request_id != ChromecastCommunication::kInvalidId )
         m_state = Loading;
 }
@@ -393,7 +397,8 @@ void intf_sys_t::setRetryOnFail( bool enabled )
     m_retry_on_fail = enabled;
 }
 
-void intf_sys_t::setHasInput( const std::string mime_type )
+void intf_sys_t::setHasInput( const std::string mime_type, vlc_tick_t caption_origin,
+                            bool have_caption_clock )
 {
     vlc_mutex_locker locker(&m_lock);
     msg_Dbg( m_module, "Loading content" );
@@ -402,6 +407,11 @@ void intf_sys_t::setHasInput( const std::string mime_type )
         reinit();
 
     this->m_mime = mime_type;
+    m_subtitle_tracks.clear();
+    if (have_caption_clock)
+        m_subtitle_tracks = m_subtitles->Publish(m_art_http_ip, caption_origin);
+    else if (m_subtitles->ActiveTrack())
+        msg_Warn(m_module, "Cannot map subtitle timestamps through this stream output chain");
 
     /* new input: clear message queue */
     std::queue<QueueableMessages> empty;
@@ -422,6 +432,56 @@ void intf_sys_t::setHasInput( const std::string mime_type )
     tryLoad();
 
     vlc_cond_signal( &m_stateChangedCond );
+}
+
+void intf_sys_t::set_input_item(void *opaque, input_item_t *item)
+{
+    intf_sys_t *self = static_cast<intf_sys_t *>(opaque);
+    // Do not hold the controller lock while scanning a local input.
+    try { self->m_subtitles->SetInput(item); }
+    catch (const std::bad_alloc &) { msg_Err(self->m_module, "Not enough memory for native captions"); }
+}
+
+void intf_sys_t::setSubtitle(const es_format_t *format)
+{
+    bool changed;
+    try { changed = m_subtitles->Select(format); }
+    catch (const std::bad_alloc &) { msg_Err(m_module, "Not enough memory for native captions"); return; }
+    if (!changed) return;
+    if (!updateSubtitleSelection())
+        msg_Warn(m_module, "New subtitle file needs a playback restart before it can be cast");
+}
+
+bool intf_sys_t::select_subtitle(void *opaque, int source_id)
+{
+    intf_sys_t *self = static_cast<intf_sys_t *>(opaque);
+    try
+    {
+        return self->m_subtitles->SelectId(source_id) && self->updateSubtitleSelection();
+    }
+    catch (const std::bad_alloc &)
+    {
+        return false;
+    }
+}
+
+bool intf_sys_t::updateSubtitleSelection()
+{
+    vlc_mutex_locker locker(&m_lock);
+    if (m_mediaSessionId && isStatePlaying())
+    {
+        if (m_subtitle_tracks.empty())
+            return false; // Preserve normal A/V reloads for non-native output chains.
+        unsigned active = m_subtitles->ActiveTrack();
+        bool available = active == 0;
+        for (const auto &track : m_subtitle_tracks)
+            available = available || track.id == active;
+        if (available)
+            m_communication->msgPlayerSetTracks(m_appTransportId, m_mediaSessionId, active);
+        else
+            return false;
+    }
+    return true;
 }
 
 bool intf_sys_t::isStateError() const
