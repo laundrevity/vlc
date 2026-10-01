@@ -1419,7 +1419,9 @@ static int httpd_ClientRecv(httpd_client_t *cl)
                                 strlen(msg_type[i].name))) {
                         p = (char *)&cl->p_buffer[strlen(msg_type[i].name) + 1 ];
                         cl->query.i_type = msg_type[i].i_type;
-                        if (cl->query.i_proto != msg_type[i].i_proto) {
+                        if (cl->query.i_proto != msg_type[i].i_proto
+                         && !(msg_type[i].i_type == HTTPD_MSG_OPTIONS
+                           && cl->query.i_proto == HTTPD_PROTO_HTTP)) {
                             p = NULL;
                             cl->query.i_proto = HTTPD_PROTO_NONE;
                             cl->query.i_type = HTTPD_MSG_NONE;
@@ -1779,6 +1781,27 @@ static void httpdLoop(httpd_host_t *host)
                         break;
 
                     case HTTPD_MSG_OPTIONS:
+                        /* Resource-specific OPTIONS handlers can answer CORS
+                         * preflight requests. Keep the generic RTSP/HTTP
+                         * response for URLs without an explicit handler. */
+                        if (query->i_proto == HTTPD_PROTO_HTTP) {
+                            for (int i = 0; i < host->i_url; ++i) {
+                                httpd_url_t *url = host->url[i];
+                                if (strcmp(url->psz_url, query->psz_url)
+                                 || !url->catch[HTTPD_MSG_OPTIONS].cb
+                                 || !httpdAuthOk(url->psz_user, url->psz_password,
+                                                httpd_MsgGet(query, "Authorization")))
+                                    continue;
+                                if (url->catch[HTTPD_MSG_OPTIONS].cb(
+                                        url->catch[HTTPD_MSG_OPTIONS].p_sys,
+                                        cl, answer, query) == VLC_SUCCESS) {
+                                    cl->url = url;
+                                    cl->i_buffer = -1;
+                                    cl->i_state = HTTPD_CLIENT_SENDING;
+                                    goto options_done;
+                                }
+                            }
+                        }
                         answer->i_type   = HTTPD_MSG_ANSWER;
                         answer->i_proto  = query->i_proto;
                         answer->i_status = 200;
@@ -1821,6 +1844,7 @@ static void httpdLoop(httpd_host_t *host)
                         cl->i_buffer = -1;  /* Force the creation of the answer in
                                              * httpd_ClientSend */
                         cl->i_state = HTTPD_CLIENT_SENDING;
+                    options_done:
                         break;
 
                     case HTTPD_MSG_NONE:
