@@ -179,6 +179,10 @@ export USE_FFMPEG=1
 export ac_cv_func_aligned_alloc=no
 export ac_cv_func_timespec_get=no
 
+# Added in macOS 27. A configure link test can accept its weak SDK import
+# on an older system, then crash when the TLS connection calls vlc_pipe().
+export ac_cv_func_pipe2=no
+
 # Added symbol in macOS 10.14 / iOS 12 / tvOS 9
 export ac_cv_func_thread_get_register_pointer_values=no
 
@@ -254,7 +258,7 @@ export EXTRA_LDFLAGS="-Wl,-syslibroot,$SDKROOT -mmacosx-version-min=$MINIMAL_OSX
 # xcodebuild only allows to set a build-in sdk, not a custom one. Therefore use the default included SDK here
 export XCODE_FLAGS="MACOSX_DEPLOYMENT_TARGET=$MINIMAL_OSX_VERSION -sdk macosx WARNING_CFLAGS=-Werror=partial-availability"
 
-CONTRIBFLAGS=
+CONTRIBFLAGS="${VLC_CONTRIB_OPTIONS:-}"
 if [ "$PACKAGETYPE" = "u" ]; then
     # release package should have sparkle, breakpad, growl
     CONTRIBFLAGS="$CONTRIBFLAGS --enable-sparkle --enable-breakpad --enable-growl"
