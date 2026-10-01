@@ -96,4 +96,9 @@ Local validation includes a complete 50-minute H.264/AC3/MP4-text source: all
 696 extracted cues matched the reference text and timestamps. Captured video and
 caption clocks agreed to within one millisecond across pause/resume and a seek.
 The simulator also accepts a packaged `.app` in place of the build directory.
-Physical receiver rendering and long playback still need hardware verification.
+On 2026-10-01, the installed build was tested on a physical Chromecast. The
+receiver reported the English SDH track active during playback, pause/resume,
+and a seek to two minutes. The viewer confirmed that captions appeared and
+seemed synchronized with speech. Playback was then stopped and the test server
+closed. This was a short hardware test; a complete episode has not yet been
+validated on the receiver.
